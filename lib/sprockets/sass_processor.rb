@@ -285,11 +285,13 @@ module Sprockets
   end
 
   class SassCProcessor < SassProcessor
+
     def initialize(options = {}, &block)
       @cache_version = options[:cache_version]
       @cache_key = "#{self.class.name}:#{VERSION}:#{Autoload::SassC::VERSION}:#{@cache_version}".freeze
 
       @functions = Module.new do
+        include SassProcessor::Functions
         include Functions
         include options[:functions] if options[:functions]
         class_eval(&block) if block_given?
@@ -327,8 +329,29 @@ module Sprockets
 
       context.metadata.merge(data: css, sass_dependencies: sass_dependencies)
     end
-  end
 
+    module Functions
+      def asset_path(path, options = {})
+        path = path.value
+
+        path, _, query, fragment = URI.split(path)[5..8]
+        path     = sprockets_context.asset_path(path, options)
+        query    = "?#{query}" if query
+        fragment = "##{fragment}" if fragment
+
+        Autoload::SassC::Script::String.new("#{path}#{query}#{fragment}", :string)
+      end
+
+      def asset_url(path, options = {})
+        Autoload::SassC::Script::String.new("url(#{asset_path(path, options).value})")
+      end
+
+      def asset_data_url(path)
+        url = sprockets_context.asset_data_uri(path.value)
+        Autoload::SassC::Script::String.new("url(" + url + ")")
+      end
+    end
+  end
 
   # Deprecated: Use Sprockets::SassProcessor::Functions instead.
   SassFunctions = SassProcessor::Functions
