@@ -46,7 +46,7 @@ module Sprockets
     def initialize(options = {}, &block)
       @cache_version = options[:cache_version]
       @cache_key = "#{self.class.name}:#{VERSION}:#{Autoload::Sass::VERSION}:#{@cache_version}".freeze
-      @importer_class = options[:importer] || Sass::Importers::Filesystem
+      @importer_class = options[:importer] || SassImporter
       @functions = Module.new do
         include Functions
         include options[:functions] if options[:functions]
@@ -283,6 +283,52 @@ module Sprockets
       :scss
     end
   end
+
+  class SassCProcessor < SassProcessor
+    def initialize(options = {}, &block)
+      @cache_version = options[:cache_version]
+      @cache_key = "#{self.class.name}:#{VERSION}:#{Autoload::SassC::VERSION}:#{@cache_version}".freeze
+
+      @functions = Module.new do
+        include Functions
+        include options[:functions] if options[:functions]
+        class_eval(&block) if block_given?
+      end
+    end
+
+    def call(input)
+      context = input[:environment].context_class.new(input)
+
+      options = {
+        filename: input[:filename],
+        syntax: self.class.syntax,
+        cache_store: CacheStore.new(input[:cache], @cache_version),
+        load_paths: input[:environment].paths,
+        importer: SassC::Rails::Importer,
+        sprockets: {
+          context: context,
+          environment: input[:environment],
+          dependencies: context.metadata[:dependencies]
+        }
+      }
+
+      engine = Autoload::SassC::Engine.new(input[:data], options)
+
+      css = Utils.module_include(Autoload::SassC::Script::Functions, @functions) do
+        engine.render
+      end
+
+      # Track all imported files
+      sass_dependencies = Set.new([input[:filename]])
+      engine.dependencies.map do |dependency|
+        sass_dependencies << dependency.options[:filename]
+        context.metadata[:dependencies] << URIUtils.build_file_digest_uri(dependency.options[:filename])
+      end
+
+      context.metadata.merge(data: css, sass_dependencies: sass_dependencies)
+    end
+  end
+
 
   # Deprecated: Use Sprockets::SassProcessor::Functions instead.
   SassFunctions = SassProcessor::Functions
