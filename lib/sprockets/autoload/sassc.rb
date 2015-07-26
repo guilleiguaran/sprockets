@@ -2,6 +2,6 @@ require 'sassc'
 
 module Sprockets
   module Autoload
-    SassC = ::SassC
+    SassC = ::Sassc
   end
 end
